@@ -4,19 +4,36 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
   password  String
   name      String?
-  role      String   @default("marketer")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  role      String    @default("marketer")
+  segments  Segment[]
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   @@map("users")
+}
+
+model Segment {
+  id           String   @id @default(uuid())
+  userId       Int      @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  s3Url        String   @map("s3_url")
+  s3Key        String   @map("s3_key")
+  fileName     String   @map("file_name")
+  fileSize     Int      @map("file_size")
+  totalRecords Int      @map("total_records")
+  status       String   @default("active")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("segments")
 }

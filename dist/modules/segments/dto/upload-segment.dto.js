@@ -9,38 +9,19 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SignupDto = void 0;
+exports.UploadSegmentDto = void 0;
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
-class SignupDto {
+class UploadSegmentDto {
 }
-exports.SignupDto = SignupDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({
-        example: 'user@example.com',
-        description: 'User email address',
-    }),
-    (0, class_validator_1.IsEmail)({}, { message: 'Please provide a valid email address' }),
-    (0, class_validator_1.IsNotEmpty)({ message: 'Email is required' }),
-    __metadata("design:type", String)
-], SignupDto.prototype, "email", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({
-        example: 'SecurePassword123!',
-        description: 'User password (minimum 8 characters)',
-        minLength: 8,
-    }),
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.IsNotEmpty)({ message: 'Password is required' }),
-    (0, class_validator_1.MinLength)(8, { message: 'Password must be at least 8 characters long' }),
-    __metadata("design:type", String)
-], SignupDto.prototype, "password", void 0);
+exports.UploadSegmentDto = UploadSegmentDto;
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        example: 'John Doe',
-        description: 'User full name',
+        example: 'Tech Startup Founders',
+        description: 'Custom name for the segment (defaults to filename if not provided)',
     }),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsNotEmpty)(),
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
-], SignupDto.prototype, "name", void 0);
+], UploadSegmentDto.prototype, "name", void 0);
