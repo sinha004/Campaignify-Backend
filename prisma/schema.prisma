@@ -9,31 +9,55 @@ datasource db {
 }
 
 model User {
-  id        Int       @id @default(autoincrement())
-  email     String    @unique
+  id        Int        @id @default(autoincrement())
+  email     String     @unique
   password  String
   name      String?
-  role      String    @default("marketer")
+  role      String     @default("marketer")
   segments  Segment[]
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
+  campaigns Campaign[]
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
 
   @@map("users")
 }
 
 model Segment {
-  id           String   @id @default(uuid())
-  userId       Int      @map("user_id")
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String     @id @default(uuid())
+  userId       Int        @map("user_id")
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   name         String
-  s3Url        String   @map("s3_url")
-  s3Key        String   @map("s3_key")
-  fileName     String   @map("file_name")
-  fileSize     Int      @map("file_size")
-  totalRecords Int      @map("total_records")
-  status       String   @default("active")
-  uploadedAt   DateTime @default(now()) @map("uploaded_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  s3Url        String     @map("s3_url")
+  s3Key        String     @map("s3_key")
+  fileName     String     @map("file_name")
+  fileSize     Int        @map("file_size")
+  totalRecords Int        @map("total_records")
+  status       String     @default("active")
+  campaigns    Campaign[]
+  uploadedAt   DateTime   @default(now()) @map("uploaded_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
 
   @@map("segments")
+}
+
+model Campaign {
+  id                 String   @id @default(uuid())
+  userId             Int      @map("user_id")
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  segmentId          String   @map("segment_id")
+  segment            Segment  @relation(fields: [segmentId], references: [id], onDelete: Restrict)
+  name               String
+  description        String?
+  startDate          DateTime @map("start_date")
+  endDate            DateTime @map("end_date")
+  status             String   @default("draft")
+  totalUsersTargeted Int      @default(0) @map("total_users_targeted")
+  totalJobsCreated   Int      @default(0) @map("total_jobs_created")
+  totalSent          Int      @default(0) @map("total_sent")
+  totalFailed        Int      @default(0) @map("total_failed")
+  flowData           Json?    @map("flow_data")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("campaigns")
 }

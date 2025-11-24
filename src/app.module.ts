@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { SegmentsModule } from './modules/segments/segments.module';
+import { CampaignsModule } from './modules/campaigns/campaigns.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { SegmentsModule } from './modules/segments/segments.module';
     AuthModule,
     UsersModule,
     SegmentsModule,
+    CampaignsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
