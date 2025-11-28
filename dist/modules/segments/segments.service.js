@@ -17,12 +17,14 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const s3_service_1 = require("../../services/s3.service");
 const config_1 = require("@nestjs/config");
+const cache_service_1 = require("../../cache/cache.service");
 const csv_parser_1 = __importDefault(require("csv-parser"));
 const stream_1 = require("stream");
 let SegmentsService = class SegmentsService {
-    constructor(s3Service, configService) {
+    constructor(s3Service, configService, cacheService) {
         this.s3Service = s3Service;
         this.configService = configService;
+        this.cacheService = cacheService;
         this.prisma = new client_1.PrismaClient();
     }
     /**
@@ -59,6 +61,8 @@ let SegmentsService = class SegmentsService {
                 status: 'active',
             },
         });
+        // Invalidate user's segments cache
+        await this.cacheService.invalidateUserResource(userId, 'segments');
         return segment;
     }
     /**
@@ -123,30 +127,36 @@ let SegmentsService = class SegmentsService {
      * Get all segments for a user
      */
     async findAllByUser(userId) {
-        return this.prisma.segment.findMany({
-            where: {
-                userId,
-                status: 'active',
-            },
-            orderBy: {
-                uploadedAt: 'desc',
-            },
-        });
+        const cacheKey = this.cacheService.getUserKey(userId, 'segments');
+        return this.cacheService.wrap(cacheKey, async () => {
+            return this.prisma.segment.findMany({
+                where: {
+                    userId,
+                    status: 'active',
+                },
+                orderBy: {
+                    uploadedAt: 'desc',
+                },
+            });
+        }, 300);
     }
     /**
      * Get a single segment by ID
      */
     async findOne(segmentId, userId) {
-        const segment = await this.prisma.segment.findUnique({
-            where: { id: segmentId },
-        });
-        if (!segment) {
-            throw new common_1.NotFoundException('Segment not found');
-        }
-        if (segment.userId !== userId) {
-            throw new common_1.ForbiddenException('Access denied to this segment');
-        }
-        return segment;
+        const cacheKey = this.cacheService.getResourceKey('segment', segmentId);
+        return this.cacheService.wrap(cacheKey, async () => {
+            const segment = await this.prisma.segment.findUnique({
+                where: { id: segmentId },
+            });
+            if (!segment) {
+                throw new common_1.NotFoundException('Segment not found');
+            }
+            if (segment.userId !== userId) {
+                throw new common_1.ForbiddenException('Access denied to this segment');
+            }
+            return segment;
+        }, 600);
     }
     /**
      * Get presigned download URL for a segment
@@ -167,6 +177,9 @@ let SegmentsService = class SegmentsService {
             where: { id: segmentId },
             data: { status: 'deleted' },
         });
+        // Invalidate cache
+        await this.cacheService.del(this.cacheService.getResourceKey('segment', segmentId));
+        await this.cacheService.invalidateUserResource(userId, 'segments');
         return { message: 'Segment deleted successfully' };
     }
 };
@@ -174,5 +187,6 @@ exports.SegmentsService = SegmentsService;
 exports.SegmentsService = SegmentsService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [s3_service_1.S3Service,
-        config_1.ConfigService])
+        config_1.ConfigService,
+        cache_service_1.CacheService])
 ], SegmentsService);

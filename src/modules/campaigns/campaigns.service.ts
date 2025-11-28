@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { CacheService } from '../../cache/cache.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { SaveFlowDto } from './dto/save-flow.dto';
@@ -8,7 +9,7 @@ import { SaveFlowDto } from './dto/save-flow.dto';
 export class CampaignsService {
   private prisma: PrismaClient;
 
-  constructor() {
+  constructor(private cacheService: CacheService) {
     this.prisma = new PrismaClient();
   }
 
@@ -58,53 +59,71 @@ export class CampaignsService {
       },
     });
 
+    // Invalidate campaigns cache
+    await this.cacheService.invalidateUserResource(userId, 'campaigns');
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', 'stats'));
+
     return campaign;
   }
 
   async findAll(userId: number) {
-    const campaigns = await this.prisma.campaign.findMany({
-      where: { userId },
-      include: {
-        segment: {
-          select: {
-            id: true,
-            name: true,
-            totalRecords: true,
+    const cacheKey = this.cacheService.getUserKey(userId, 'campaigns');
+    
+    return this.cacheService.wrap(
+      cacheKey,
+      async () => {
+        return this.prisma.campaign.findMany({
+          where: { userId },
+          include: {
+            segment: {
+              select: {
+                id: true,
+                name: true,
+                totalRecords: true,
+              },
+            },
           },
-        },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        });
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
-
-    return campaigns;
+      300, // 5 minutes TTL
+    );
   }
 
   async findOne(id: string, userId: number) {
-    const campaign = await this.prisma.campaign.findUnique({
-      where: { id },
-      include: {
-        segment: {
-          select: {
-            id: true,
-            name: true,
-            totalRecords: true,
-            fileName: true,
+    const cacheKey = this.cacheService.getResourceKey('campaign', id);
+    
+    return this.cacheService.wrap(
+      cacheKey,
+      async () => {
+        const campaign = await this.prisma.campaign.findUnique({
+          where: { id },
+          include: {
+            segment: {
+              select: {
+                id: true,
+                name: true,
+                totalRecords: true,
+                fileName: true,
+              },
+            },
           },
-        },
+        });
+
+        if (!campaign) {
+          throw new NotFoundException('Campaign not found');
+    }
+
+        if (campaign.userId !== userId) {
+          throw new ForbiddenException('You do not have access to this campaign');
+        }
+
+        return campaign;
       },
-    });
-
-    if (!campaign) {
-      throw new NotFoundException('Campaign not found');
-    }
-
-    if (campaign.userId !== userId) {
-      throw new ForbiddenException('You do not have access to this campaign');
-    }
-
-    return campaign;
+      600, // 10 minutes TTL
+    );
   }
 
   async update(id: string, userId: number, updateCampaignDto: UpdateCampaignDto) {
@@ -157,6 +176,10 @@ export class CampaignsService {
       },
     });
 
+    // Invalidate cache
+    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.invalidateUserResource(userId, 'campaigns');
+
     return updatedCampaign;
   }
 
@@ -193,6 +216,11 @@ export class CampaignsService {
       },
     });
 
+    // Invalidate cache
+    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.invalidateUserResource(userId, 'campaigns');
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', 'stats'));
+
     return updatedCampaign;
   }
 
@@ -214,6 +242,9 @@ export class CampaignsService {
         },
       },
     });
+
+    // Invalidate campaign cache
+    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
 
     return updatedCampaign;
   }
@@ -238,24 +269,37 @@ export class CampaignsService {
       where: { id },
     });
 
+    // Invalidate cache
+    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.invalidateUserResource(userId, 'campaigns');
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', 'stats'));
+
     return { message: 'Campaign deleted successfully' };
   }
 
   async getStatistics(userId: number) {
-    const campaigns = await this.prisma.campaign.findMany({
-      where: { userId },
-    });
+    const cacheKey = this.cacheService.getUserKey(userId, 'campaign', 'stats');
+    
+    return this.cacheService.wrap(
+      cacheKey,
+      async () => {
+        const campaigns = await this.prisma.campaign.findMany({
+          where: { userId },
+        });
 
-    const stats = {
-      totalCampaigns: campaigns.length,
-      activeCampaigns: campaigns.filter((c: any) => c.status === 'running').length,
-      scheduledCampaigns: campaigns.filter((c: any) => c.status === 'scheduled').length,
-      completedCampaigns: campaigns.filter((c: any) => c.status === 'completed').length,
-      totalSent: campaigns.reduce((sum: number, c: any) => sum + c.totalSent, 0),
-      totalFailed: campaigns.reduce((sum: number, c: any) => sum + c.totalFailed, 0),
-      totalUsersTargeted: campaigns.reduce((sum: number, c: any) => sum + c.totalUsersTargeted, 0),
-    };
+        const stats = {
+          totalCampaigns: campaigns.length,
+          activeCampaigns: campaigns.filter((c: any) => c.status === 'running').length,
+          scheduledCampaigns: campaigns.filter((c: any) => c.status === 'scheduled').length,
+          completedCampaigns: campaigns.filter((c: any) => c.status === 'completed').length,
+          totalSent: campaigns.reduce((sum: number, c: any) => sum + c.totalSent, 0),
+          totalFailed: campaigns.reduce((sum: number, c: any) => sum + c.totalFailed, 0),
+          totalUsersTargeted: campaigns.reduce((sum: number, c: any) => sum + c.totalUsersTargeted, 0),
+        };
 
-    return stats;
+        return stats;
+      },
+      120, // 2 minutes TTL for statistics
+    );
   }
 }

@@ -12,8 +12,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CampaignsService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
+const cache_service_1 = require("../../cache/cache.service");
 let CampaignsService = class CampaignsService {
-    constructor() {
+    constructor(cacheService) {
+        this.cacheService = cacheService;
         this.prisma = new client_1.PrismaClient();
     }
     async create(userId, createCampaignDto) {
@@ -55,47 +57,55 @@ let CampaignsService = class CampaignsService {
                 },
             },
         });
+        // Invalidate campaigns cache
+        await this.cacheService.invalidateUserResource(userId, 'campaigns');
+        await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', 'stats'));
         return campaign;
     }
     async findAll(userId) {
-        const campaigns = await this.prisma.campaign.findMany({
-            where: { userId },
-            include: {
-                segment: {
-                    select: {
-                        id: true,
-                        name: true,
-                        totalRecords: true,
+        const cacheKey = this.cacheService.getUserKey(userId, 'campaigns');
+        return this.cacheService.wrap(cacheKey, async () => {
+            return this.prisma.campaign.findMany({
+                where: { userId },
+                include: {
+                    segment: {
+                        select: {
+                            id: true,
+                            name: true,
+                            totalRecords: true,
+                        },
                     },
                 },
-            },
-            orderBy: {
-                createdAt: 'desc',
-            },
-        });
-        return campaigns;
+                orderBy: {
+                    createdAt: 'desc',
+                },
+            });
+        }, 300);
     }
     async findOne(id, userId) {
-        const campaign = await this.prisma.campaign.findUnique({
-            where: { id },
-            include: {
-                segment: {
-                    select: {
-                        id: true,
-                        name: true,
-                        totalRecords: true,
-                        fileName: true,
+        const cacheKey = this.cacheService.getResourceKey('campaign', id);
+        return this.cacheService.wrap(cacheKey, async () => {
+            const campaign = await this.prisma.campaign.findUnique({
+                where: { id },
+                include: {
+                    segment: {
+                        select: {
+                            id: true,
+                            name: true,
+                            totalRecords: true,
+                            fileName: true,
+                        },
                     },
                 },
-            },
-        });
-        if (!campaign) {
-            throw new common_1.NotFoundException('Campaign not found');
-        }
-        if (campaign.userId !== userId) {
-            throw new common_1.ForbiddenException('You do not have access to this campaign');
-        }
-        return campaign;
+            });
+            if (!campaign) {
+                throw new common_1.NotFoundException('Campaign not found');
+            }
+            if (campaign.userId !== userId) {
+                throw new common_1.ForbiddenException('You do not have access to this campaign');
+            }
+            return campaign;
+        }, 600);
     }
     async update(id, userId, updateCampaignDto) {
         const campaign = await this.findOne(id, userId);
@@ -137,6 +147,9 @@ let CampaignsService = class CampaignsService {
                 },
             },
         });
+        // Invalidate cache
+        await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+        await this.cacheService.invalidateUserResource(userId, 'campaigns');
         return updatedCampaign;
     }
     async updateStatus(id, userId, status) {
@@ -166,6 +179,10 @@ let CampaignsService = class CampaignsService {
                 },
             },
         });
+        // Invalidate cache
+        await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+        await this.cacheService.invalidateUserResource(userId, 'campaigns');
+        await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', 'stats'));
         return updatedCampaign;
     }
     async saveFlow(id, userId, saveFlowDto) {
@@ -185,6 +202,8 @@ let CampaignsService = class CampaignsService {
                 },
             },
         });
+        // Invalidate campaign cache
+        await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
         return updatedCampaign;
     }
     async getFlow(id, userId) {
@@ -202,26 +221,33 @@ let CampaignsService = class CampaignsService {
         await this.prisma.campaign.delete({
             where: { id },
         });
+        // Invalidate cache
+        await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+        await this.cacheService.invalidateUserResource(userId, 'campaigns');
+        await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', 'stats'));
         return { message: 'Campaign deleted successfully' };
     }
     async getStatistics(userId) {
-        const campaigns = await this.prisma.campaign.findMany({
-            where: { userId },
-        });
-        const stats = {
-            totalCampaigns: campaigns.length,
-            activeCampaigns: campaigns.filter((c) => c.status === 'running').length,
-            scheduledCampaigns: campaigns.filter((c) => c.status === 'scheduled').length,
-            completedCampaigns: campaigns.filter((c) => c.status === 'completed').length,
-            totalSent: campaigns.reduce((sum, c) => sum + c.totalSent, 0),
-            totalFailed: campaigns.reduce((sum, c) => sum + c.totalFailed, 0),
-            totalUsersTargeted: campaigns.reduce((sum, c) => sum + c.totalUsersTargeted, 0),
-        };
-        return stats;
+        const cacheKey = this.cacheService.getUserKey(userId, 'campaign', 'stats');
+        return this.cacheService.wrap(cacheKey, async () => {
+            const campaigns = await this.prisma.campaign.findMany({
+                where: { userId },
+            });
+            const stats = {
+                totalCampaigns: campaigns.length,
+                activeCampaigns: campaigns.filter((c) => c.status === 'running').length,
+                scheduledCampaigns: campaigns.filter((c) => c.status === 'scheduled').length,
+                completedCampaigns: campaigns.filter((c) => c.status === 'completed').length,
+                totalSent: campaigns.reduce((sum, c) => sum + c.totalSent, 0),
+                totalFailed: campaigns.reduce((sum, c) => sum + c.totalFailed, 0),
+                totalUsersTargeted: campaigns.reduce((sum, c) => sum + c.totalUsersTargeted, 0),
+            };
+            return stats;
+        }, 120);
     }
 };
 exports.CampaignsService = CampaignsService;
 exports.CampaignsService = CampaignsService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [])
+    __metadata("design:paramtypes", [cache_service_1.CacheService])
 ], CampaignsService);

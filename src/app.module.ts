@@ -6,6 +6,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { SegmentsModule } from './modules/segments/segments.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
+import { HealthModule } from './modules/health/health.module';
+import { CacheModule } from './cache/cache.module';
 
 @Module({
   imports: [
@@ -13,10 +15,12 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    CacheModule,
     AuthModule,
     UsersModule,
     SegmentsModule,
     CampaignsModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

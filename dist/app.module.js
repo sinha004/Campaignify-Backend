@@ -15,6 +15,8 @@ const auth_module_1 = require("./modules/auth/auth.module");
 const users_module_1 = require("./modules/users/users.module");
 const segments_module_1 = require("./modules/segments/segments.module");
 const campaigns_module_1 = require("./modules/campaigns/campaigns.module");
+const health_module_1 = require("./modules/health/health.module");
+const cache_module_1 = require("./cache/cache.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -25,10 +27,12 @@ exports.AppModule = AppModule = __decorate([
                 isGlobal: true,
                 envFilePath: '.env',
             }),
+            cache_module_1.CacheModule,
             auth_module_1.AuthModule,
             users_module_1.UsersModule,
             segments_module_1.SegmentsModule,
             campaigns_module_1.CampaignsModule,
+            health_module_1.HealthModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

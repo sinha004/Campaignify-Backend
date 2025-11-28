@@ -7,6 +7,7 @@ import {
 import { PrismaClient } from '@prisma/client';
 import { S3Service } from '../../services/s3.service';
 import { ConfigService } from '@nestjs/config';
+import { CacheService } from '../../cache/cache.service';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
 
@@ -17,6 +18,7 @@ export class SegmentsService {
   constructor(
     private s3Service: S3Service,
     private configService: ConfigService,
+    private cacheService: CacheService,
   ) {
     this.prisma = new PrismaClient();
   }
@@ -69,6 +71,9 @@ export class SegmentsService {
         status: 'active',
       },
     });
+
+    // Invalidate user's segments cache
+    await this.cacheService.invalidateUserResource(userId, 'segments');
 
     return segment;
   }
@@ -144,34 +149,50 @@ export class SegmentsService {
    * Get all segments for a user
    */
   async findAllByUser(userId: number) {
-    return this.prisma.segment.findMany({
-      where: {
-        userId,
-        status: 'active',
+    const cacheKey = this.cacheService.getUserKey(userId, 'segments');
+    
+    return this.cacheService.wrap(
+      cacheKey,
+      async () => {
+        return this.prisma.segment.findMany({
+          where: {
+            userId,
+            status: 'active',
+          },
+          orderBy: {
+            uploadedAt: 'desc',
+          },
+        });
       },
-      orderBy: {
-        uploadedAt: 'desc',
-      },
-    });
+      300, // 5 minutes TTL
+    );
   }
 
   /**
    * Get a single segment by ID
    */
   async findOne(segmentId: string, userId: number) {
-    const segment = await this.prisma.segment.findUnique({
-      where: { id: segmentId },
-    });
+    const cacheKey = this.cacheService.getResourceKey('segment', segmentId);
+    
+    return this.cacheService.wrap(
+      cacheKey,
+      async () => {
+        const segment = await this.prisma.segment.findUnique({
+          where: { id: segmentId },
+        });
 
-    if (!segment) {
-      throw new NotFoundException('Segment not found');
-    }
+        if (!segment) {
+          throw new NotFoundException('Segment not found');
+        }
 
-    if (segment.userId !== userId) {
-      throw new ForbiddenException('Access denied to this segment');
-    }
+        if (segment.userId !== userId) {
+          throw new ForbiddenException('Access denied to this segment');
+        }
 
-    return segment;
+        return segment;
+      },
+      600, // 10 minutes TTL
+    );
   }
 
   /**
@@ -196,6 +217,10 @@ export class SegmentsService {
       where: { id: segmentId },
       data: { status: 'deleted' },
     });
+
+    // Invalidate cache
+    await this.cacheService.del(this.cacheService.getResourceKey('segment', segmentId));
+    await this.cacheService.invalidateUserResource(userId, 'segments');
 
     return { message: 'Segment deleted successfully' };
   }
