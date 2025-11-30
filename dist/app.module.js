@@ -17,6 +17,7 @@ const segments_module_1 = require("./modules/segments/segments.module");
 const campaigns_module_1 = require("./modules/campaigns/campaigns.module");
 const health_module_1 = require("./modules/health/health.module");
 const cache_module_1 = require("./cache/cache.module");
+const n8n_module_1 = require("./services/n8n/n8n.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -28,6 +29,7 @@ exports.AppModule = AppModule = __decorate([
                 envFilePath: '.env',
             }),
             cache_module_1.CacheModule,
+            n8n_module_1.N8nModule,
             auth_module_1.AuthModule,
             users_module_1.UsersModule,
             segments_module_1.SegmentsModule,

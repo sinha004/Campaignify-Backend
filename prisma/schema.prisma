@@ -4,8 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -41,23 +42,36 @@ model Segment {
 }
 
 model Campaign {
-  id                 String   @id @default(uuid())
-  userId             Int      @map("user_id")
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  segmentId          String   @map("segment_id")
-  segment            Segment  @relation(fields: [segmentId], references: [id], onDelete: Restrict)
+  id                 String    @id @default(uuid())
+  userId             Int       @map("user_id")
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  segmentId          String    @map("segment_id")
+  segment            Segment   @relation(fields: [segmentId], references: [id], onDelete: Restrict)
   name               String
   description        String?
-  startDate          DateTime @map("start_date")
-  endDate            DateTime @map("end_date")
-  status             String   @default("draft")
-  totalUsersTargeted Int      @default(0) @map("total_users_targeted")
-  totalJobsCreated   Int      @default(0) @map("total_jobs_created")
-  totalSent          Int      @default(0) @map("total_sent")
-  totalFailed        Int      @default(0) @map("total_failed")
-  flowData           Json?    @map("flow_data")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  startDate          DateTime  @map("start_date")
+  endDate            DateTime  @map("end_date")
+  status             String    @default("draft")
+  totalUsersTargeted Int       @default(0) @map("total_users_targeted")
+  totalJobsCreated   Int       @default(0) @map("total_jobs_created")
+  totalSent          Int       @default(0) @map("total_sent")
+  totalFailed        Int       @default(0) @map("total_failed")
+  
+  // Flow Builder fields
+  flowData           Json?     @map("flow_data")
+  flowVersion        Int       @default(0) @map("flow_version")
+  flowUpdatedAt      DateTime? @map("flow_updated_at")
+  
+  // n8n Integration fields
+  n8nWorkflowId      String?   @map("n8n_workflow_id")
+  n8nWorkflowUrl     String?   @map("n8n_workflow_url")
+  n8nLastExecutionId String?   @map("n8n_last_execution_id")
+  executionStatus    String?   @map("execution_status")
+  executionCount     Int       @default(0) @map("execution_count")
+  lastExecutedAt     DateTime? @map("last_executed_at")
+  
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   @@map("campaigns")
 }

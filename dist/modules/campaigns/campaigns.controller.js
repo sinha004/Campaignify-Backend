@@ -47,8 +47,23 @@ let CampaignsController = class CampaignsController {
     async saveFlow(id, req, saveFlowDto) {
         return this.campaignsService.saveFlow(id, req.user.userId, saveFlowDto);
     }
+    async updateFlow(id, req, saveFlowDto) {
+        return this.campaignsService.saveFlow(id, req.user.userId, saveFlowDto);
+    }
     async getFlow(id, req) {
         return this.campaignsService.getFlow(id, req.user.userId);
+    }
+    async deployFlow(id, req) {
+        return this.campaignsService.deployFlow(id, req.user.userId);
+    }
+    async triggerWorkflow(id, req) {
+        return this.campaignsService.triggerWorkflow(id, req.user.userId);
+    }
+    async getWorkflowStatus(id, req) {
+        return this.campaignsService.getWorkflowStatus(id, req.user.userId);
+    }
+    async testN8nConnection() {
+        return this.campaignsService.testN8nConnection();
     }
     async delete(id, req) {
         return this.campaignsService.delete(id, req.user.userId);
@@ -166,6 +181,23 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], CampaignsController.prototype, "saveFlow", null);
 __decorate([
+    (0, common_1.Patch)(':id/flow'),
+    (0, swagger_1.ApiOperation)({ summary: 'Update flow builder data for a campaign' }),
+    (0, swagger_1.ApiParam)({ name: 'id', description: 'Campaign ID' }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Flow data updated successfully',
+        type: campaign_response_dto_1.CampaignResponseDto,
+    }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Campaign not found' }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Request)()),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, save_flow_dto_1.SaveFlowDto]),
+    __metadata("design:returntype", Promise)
+], CampaignsController.prototype, "updateFlow", null);
+__decorate([
     (0, common_1.Get)(':id/flow'),
     (0, swagger_1.ApiOperation)({ summary: 'Get flow builder data for a campaign' }),
     (0, swagger_1.ApiParam)({ name: 'id', description: 'Campaign ID' }),
@@ -180,6 +212,64 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], CampaignsController.prototype, "getFlow", null);
+__decorate([
+    (0, common_1.Post)(':id/deploy-flow'),
+    (0, swagger_1.ApiOperation)({ summary: 'Deploy flow to n8n workflow engine' }),
+    (0, swagger_1.ApiParam)({ name: 'id', description: 'Campaign ID' }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Flow deployed successfully to n8n',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Flow validation failed or deployment error' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Campaign not found' }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], CampaignsController.prototype, "deployFlow", null);
+__decorate([
+    (0, common_1.Post)(':id/trigger-workflow'),
+    (0, swagger_1.ApiOperation)({ summary: 'Trigger the n8n workflow for this campaign' }),
+    (0, swagger_1.ApiParam)({ name: 'id', description: 'Campaign ID' }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Workflow triggered successfully',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'No workflow deployed or trigger error' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Campaign not found' }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], CampaignsController.prototype, "triggerWorkflow", null);
+__decorate([
+    (0, common_1.Get)(':id/workflow-status'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get n8n workflow status and recent executions' }),
+    (0, swagger_1.ApiParam)({ name: 'id', description: 'Campaign ID' }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Workflow status retrieved successfully',
+    }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Campaign not found' }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], CampaignsController.prototype, "getWorkflowStatus", null);
+__decorate([
+    (0, common_1.Get)('n8n/test-connection'),
+    (0, swagger_1.ApiOperation)({ summary: 'Test connection to n8n' }),
+    (0, swagger_1.ApiResponse)({
+        status: 200,
+        description: 'Connection test result',
+    }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], CampaignsController.prototype, "testN8nConnection", null);
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Delete a campaign' }),

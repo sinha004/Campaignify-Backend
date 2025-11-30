@@ -132,6 +132,23 @@ export class CampaignsController {
     return this.campaignsService.saveFlow(id, req.user.userId, saveFlowDto);
   }
 
+  @Patch(':id/flow')
+  @ApiOperation({ summary: 'Update flow builder data for a campaign' })
+  @ApiParam({ name: 'id', description: 'Campaign ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Flow data updated successfully',
+    type: CampaignResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Campaign not found' })
+  async updateFlow(
+    @Param('id') id: string,
+    @Request() req: any,
+    @Body() saveFlowDto: SaveFlowDto,
+  ) {
+    return this.campaignsService.saveFlow(id, req.user.userId, saveFlowDto);
+  }
+
   @Get(':id/flow')
   @ApiOperation({ summary: 'Get flow builder data for a campaign' })
   @ApiParam({ name: 'id', description: 'Campaign ID' })
@@ -142,6 +159,54 @@ export class CampaignsController {
   @ApiResponse({ status: 404, description: 'Campaign not found' })
   async getFlow(@Param('id') id: string, @Request() req: any) {
     return this.campaignsService.getFlow(id, req.user.userId);
+  }
+
+  @Post(':id/deploy-flow')
+  @ApiOperation({ summary: 'Deploy flow to n8n workflow engine' })
+  @ApiParam({ name: 'id', description: 'Campaign ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Flow deployed successfully to n8n',
+  })
+  @ApiResponse({ status: 400, description: 'Flow validation failed or deployment error' })
+  @ApiResponse({ status: 404, description: 'Campaign not found' })
+  async deployFlow(@Param('id') id: string, @Request() req: any) {
+    return this.campaignsService.deployFlow(id, req.user.userId);
+  }
+
+  @Post(':id/trigger-workflow')
+  @ApiOperation({ summary: 'Trigger the n8n workflow for this campaign' })
+  @ApiParam({ name: 'id', description: 'Campaign ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Workflow triggered successfully',
+  })
+  @ApiResponse({ status: 400, description: 'No workflow deployed or trigger error' })
+  @ApiResponse({ status: 404, description: 'Campaign not found' })
+  async triggerWorkflow(@Param('id') id: string, @Request() req: any) {
+    return this.campaignsService.triggerWorkflow(id, req.user.userId);
+  }
+
+  @Get(':id/workflow-status')
+  @ApiOperation({ summary: 'Get n8n workflow status and recent executions' })
+  @ApiParam({ name: 'id', description: 'Campaign ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Workflow status retrieved successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Campaign not found' })
+  async getWorkflowStatus(@Param('id') id: string, @Request() req: any) {
+    return this.campaignsService.getWorkflowStatus(id, req.user.userId);
+  }
+
+  @Get('n8n/test-connection')
+  @ApiOperation({ summary: 'Test connection to n8n' })
+  @ApiResponse({
+    status: 200,
+    description: 'Connection test result',
+  })
+  async testN8nConnection() {
+    return this.campaignsService.testN8nConnection();
   }
 
   @Delete(':id')

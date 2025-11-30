@@ -8,6 +8,7 @@ import { SegmentsModule } from './modules/segments/segments.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { HealthModule } from './modules/health/health.module';
 import { CacheModule } from './cache/cache.module';
+import { N8nModule } from './services/n8n/n8n.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { CacheModule } from './cache/cache.module';
       envFilePath: '.env',
     }),
     CacheModule,
+    N8nModule,
     AuthModule,
     UsersModule,
     SegmentsModule,
