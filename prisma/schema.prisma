@@ -99,6 +99,7 @@ model CampaignExecution {
   status          String    @default("pending") // pending, processing, success, failed
   error           String?
   attempts        Int       @default(0)
+  recipientData   Json?     @map("recipient_data")
   n8nExecutionId  String?   @map("n8n_execution_id")
   processedAt     DateTime? @map("processed_at")
   createdAt       DateTime  @default(now()) @map("created_at")

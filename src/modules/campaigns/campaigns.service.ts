@@ -116,8 +116,8 @@ export class CampaignsService {
   }
 
   async findOne(id: string, userId: number) {
-    const cacheKey = this.cacheService.getResourceKey('campaign', id);
-    
+    const cacheKey = this.cacheService.getUserKey(userId, 'campaign', id);
+
     return this.cacheService.wrap(
       cacheKey,
       async () => {
@@ -200,7 +200,7 @@ export class CampaignsService {
     });
 
     // Invalidate cache
-    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
     await this.cacheService.invalidateUserResource(userId, 'campaigns');
 
     return updatedCampaign;
@@ -268,7 +268,7 @@ export class CampaignsService {
     });
 
     // Invalidate cache
-    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
     await this.cacheService.invalidateUserResource(userId, 'campaigns');
     await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', 'stats'));
 
@@ -296,7 +296,7 @@ export class CampaignsService {
     });
 
     // Invalidate campaign and flow cache
-    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
     await this.cacheService.del(this.cacheService.getResourceKey('campaign-flow', id));
 
     return updatedCampaign;
@@ -330,7 +330,7 @@ export class CampaignsService {
     });
 
     // Invalidate all related cache
-    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
     await this.cacheService.del(this.cacheService.getResourceKey('campaign-flow', id));
     await this.cacheService.del(this.cacheService.getResourceKey('workflow-status', id));
     await this.cacheService.invalidateUserResource(userId, 'campaigns');
@@ -354,8 +354,8 @@ export class CampaignsService {
           activeCampaigns: campaigns.filter((c: any) => c.status === 'running').length,
           scheduledCampaigns: campaigns.filter((c: any) => c.status === 'scheduled').length,
           completedCampaigns: campaigns.filter((c: any) => c.status === 'completed').length,
-          totalSent: campaigns.reduce((sum: number, c: any) => sum + c.totalSent, 0),
-          totalFailed: campaigns.reduce((sum: number, c: any) => sum + c.totalFailed, 0),
+          totalSent: campaigns.reduce((sum: number, c: any) => sum + (c.totalSent || c.successCount || 0), 0),
+          totalFailed: campaigns.reduce((sum: number, c: any) => sum + (c.totalFailed || c.failedCount || 0), 0),
           totalUsersTargeted: campaigns.reduce((sum: number, c: any) => sum + c.totalUsersTargeted, 0),
         };
 
@@ -417,13 +417,13 @@ export class CampaignsService {
       }
 
       // Activate the workflow so webhook is registered
+      let activationWarning: string | null = null;
       try {
         await this.n8nApiService.activateWorkflow(workflowResult.id);
         this.logger.log(`Workflow ${workflowResult.id} activated successfully`);
       } catch (activateError: any) {
         this.logger.error(`Failed to activate workflow: ${activateError.message}`);
-        // Don't throw - workflow is created but not activated
-        // User can manually activate in n8n or we return the test webhook URL
+        activationWarning = `Workflow created but activation failed: ${activateError.message}. Please activate it manually in n8n.`;
       }
 
       // Get webhook URL - path matches what's configured in the webhook node
@@ -452,14 +452,17 @@ export class CampaignsService {
       });
 
       // Invalidate cache (including flow and workflow status)
-      await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+      await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
       await this.cacheService.del(this.cacheService.getResourceKey('campaign-flow', id));
       await this.cacheService.del(this.cacheService.getResourceKey('workflow-status', id));
 
       this.logger.log(`Flow deployed. Workflow ID: ${workflowResult.id}`);
 
       return {
-        message: 'Flow deployed successfully',
+        message: activationWarning
+          ? 'Flow deployed but workflow activation failed'
+          : 'Flow deployed successfully',
+        warning: activationWarning,
         n8nWorkflowId: workflowResult.id,
         n8nWorkflowUrl: updatedCampaign.n8nWorkflowUrl,
         webhookUrl: webhookUrl,
@@ -516,7 +519,7 @@ export class CampaignsService {
       });
 
       // Invalidate cache (including workflow status since execution count changed)
-      await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+      await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
       await this.cacheService.del(this.cacheService.getResourceKey('workflow-status', id));
 
       this.logger.log(`Workflow triggered for campaign: ${campaign.id}`);
@@ -660,7 +663,7 @@ export class CampaignsService {
     await this.campaignExecutionProducer.pauseCampaign(id);
 
     // Invalidate cache
-    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
     await this.cacheService.invalidateUserResource(userId, 'campaigns');
 
     return { message: 'Campaign paused successfully' };
@@ -679,7 +682,7 @@ export class CampaignsService {
     await this.campaignExecutionProducer.resumeCampaign(id);
 
     // Invalidate cache
-    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
     await this.cacheService.invalidateUserResource(userId, 'campaigns');
 
     return { message: 'Campaign resumed successfully' };
@@ -748,13 +751,14 @@ export class CampaignsService {
     const n8nWebhookBaseUrl = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook';
     const webhookUrl = `${n8nWebhookBaseUrl}/campaign-${id}`;
 
-    // Re-queue failed executions
+    // Re-queue failed executions with original recipient data
     for (const execution of failedExecutions) {
+      const storedData = (execution as any).recipientData as Record<string, any> | null;
       await this.campaignExecutionProducer.addJob({
         campaignId: id,
         recipientEmail: execution.email,
         recipientName: execution.name,
-        recipientData: { email: execution.email, name: execution.name },
+        recipientData: storedData || { email: execution.email, name: execution.name },
         webhookUrl,
         attempt: execution.attempts + 1,
       });
@@ -766,19 +770,21 @@ export class CampaignsService {
       });
     }
 
-    // Update campaign counts
-    await this.prisma.campaign.update({
-      where: { id },
-      data: {
-        processedCount: { decrement: failedExecutions.length },
-        failedCount: { decrement: failedExecutions.length },
-        status: 'running',
-        executionStatus: 'active',
-      },
-    });
+    // Update campaign counts — use raw SQL to prevent negative values
+    const retryCount = failedExecutions.length;
+    await this.prisma.$executeRaw`
+      UPDATE campaigns
+      SET processed_count = GREATEST(0, processed_count - ${retryCount}),
+          failed_count = GREATEST(0, failed_count - ${retryCount}),
+          total_failed = GREATEST(0, total_failed - ${retryCount}),
+          status = 'running',
+          execution_status = 'active',
+          updated_at = NOW()
+      WHERE id = ${id}
+    `;
 
     // Invalidate cache
-    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
 
     return {
       message: `Re-queued ${failedExecutions.length} failed executions`,
@@ -829,7 +835,7 @@ export class CampaignsService {
     });
 
     // Invalidate cache
-    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
     await this.cacheService.invalidateUserResource(userId, 'campaigns');
     await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', 'stats'));
 
@@ -868,7 +874,7 @@ export class CampaignsService {
     const result = await this.campaignExecutionProducer.startCampaign(id);
 
     // Invalidate cache
-    await this.cacheService.del(this.cacheService.getResourceKey('campaign', id));
+    await this.cacheService.del(this.cacheService.getUserKey(userId, 'campaign', id));
     await this.cacheService.invalidateUserResource(userId, 'campaigns');
 
     return result;

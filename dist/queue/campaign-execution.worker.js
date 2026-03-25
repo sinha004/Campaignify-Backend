@@ -8,6 +8,9 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -22,9 +25,10 @@ const config_1 = require("@nestjs/config");
 const axios_1 = __importDefault(require("axios"));
 const queue_constants_1 = require("./queue.constants");
 let CampaignExecutionWorker = CampaignExecutionWorker_1 = class CampaignExecutionWorker extends bullmq_1.WorkerHost {
-    constructor(configService) {
+    constructor(configService, campaignQueue) {
         super();
         this.configService = configService;
+        this.campaignQueue = campaignQueue;
         this.logger = new common_1.Logger(CampaignExecutionWorker_1.name);
         this.prisma = new client_1.PrismaClient();
         this.logger.log('🚀 CampaignExecutionWorker initialized');
@@ -54,6 +58,16 @@ let CampaignExecutionWorker = CampaignExecutionWorker_1 = class CampaignExecutio
         var _a, _b;
         const { campaignId, recipientEmail, recipientName, recipientData, webhookUrl } = job.data;
         this.logger.debug(`Processing job for campaign ${campaignId}: ${recipientEmail}`);
+        // Check if campaign is paused — re-queue with delay instead of processing
+        const campaignState = await this.prisma.campaign.findUnique({
+            where: { id: campaignId },
+            select: { status: true },
+        });
+        if ((campaignState === null || campaignState === void 0 ? void 0 : campaignState.status) === 'paused') {
+            this.logger.debug(`Campaign ${campaignId} is paused, re-queuing job for ${recipientEmail}`);
+            await this.campaignQueue.add(job.name, job.data, { delay: 30000 });
+            return { skipped: true, reason: 'campaign paused' };
+        }
         try {
             // Create or update execution record
             const execution = await this.prisma.campaignExecution.upsert({
@@ -67,10 +81,12 @@ let CampaignExecutionWorker = CampaignExecutionWorker_1 = class CampaignExecutio
                     name: recipientName,
                     status: 'processing',
                     attempts: job.attemptsMade + 1,
+                    recipientData: recipientData || {},
                 },
                 update: {
                     status: 'processing',
                     attempts: job.attemptsMade + 1,
+                    recipientData: recipientData || undefined,
                 },
             });
             // Ensure we use PRODUCTION webhook URL (not webhook-test)
@@ -122,6 +138,7 @@ let CampaignExecutionWorker = CampaignExecutionWorker_1 = class CampaignExecutio
                 data: {
                     processedCount: { increment: 1 },
                     successCount: { increment: 1 },
+                    totalSent: { increment: 1 },
                 },
             });
             // Check if campaign is complete
@@ -172,31 +189,29 @@ let CampaignExecutionWorker = CampaignExecutionWorker_1 = class CampaignExecutio
             data: {
                 processedCount: { increment: 1 },
                 failedCount: { increment: 1 },
+                totalFailed: { increment: 1 },
             },
         });
         // Check if campaign is complete
         await this.checkCampaignCompletion(campaignId);
     }
     /**
-     * Check if all jobs for a campaign are processed
+     * Check if all jobs for a campaign are processed (atomic to prevent race conditions).
+     * Uses raw SQL so the status check + field comparison + update happen in a single atomic statement.
+     * Only the first worker to reach this point will match the WHERE clause and mark it complete.
      */
     async checkCampaignCompletion(campaignId) {
-        const campaign = await this.prisma.campaign.findUnique({
-            where: { id: campaignId },
-        });
-        if (!campaign)
-            return;
-        // Check if all recipients have been processed
-        if (campaign.processedCount >= campaign.totalRecipients && campaign.totalRecipients > 0) {
-            await this.prisma.campaign.update({
-                where: { id: campaignId },
-                data: {
-                    status: 'completed',
-                    executionStatus: 'completed',
-                    completedAt: new Date(),
-                },
-            });
-            this.logger.log(`Campaign ${campaignId} completed! Success: ${campaign.successCount}, Failed: ${campaign.failedCount}`);
+        const updated = await this.prisma.$executeRaw `
+      UPDATE campaigns
+      SET status = 'completed', execution_status = 'completed', completed_at = NOW(), updated_at = NOW()
+      WHERE id = ${campaignId}
+        AND status = 'running'
+        AND total_recipients > 0
+        AND processed_count >= total_recipients
+    `;
+        if (updated > 0) {
+            const campaign = await this.prisma.campaign.findUnique({ where: { id: campaignId } });
+            this.logger.log(`Campaign ${campaignId} completed! Success: ${campaign === null || campaign === void 0 ? void 0 : campaign.successCount}, Failed: ${campaign === null || campaign === void 0 ? void 0 : campaign.failedCount}`);
         }
     }
     /**
@@ -263,5 +278,7 @@ exports.CampaignExecutionWorker = CampaignExecutionWorker = CampaignExecutionWor
             duration: 60000, // Per minute (rate limiting for email providers)
         },
     }),
-    __metadata("design:paramtypes", [config_1.ConfigService])
+    __param(1, (0, bullmq_1.InjectQueue)(queue_constants_1.CAMPAIGN_QUEUE)),
+    __metadata("design:paramtypes", [config_1.ConfigService,
+        bullmq_2.Queue])
 ], CampaignExecutionWorker);

@@ -166,16 +166,16 @@ export class CampaignExecutionProducer {
         bodyStream
           .pipe(csvParser())
           .on('data', async (row: any) => {
-            rowCount++;
-
             // Extract email and name from row (handle different column names)
             const email = row.email || row.Email || row.EMAIL || row.e_mail;
             const name = row.name || row.Name || row.NAME || row.full_name || row.fullName || null;
 
             if (!email) {
-              this.logger.warn(`Row ${rowCount} has no email, skipping`);
+              this.logger.warn(`Skipping row with no email`);
               return;
             }
+
+            rowCount++;
 
             // Create job data
             const jobData: CampaignJobData = {
@@ -255,13 +255,9 @@ export class CampaignExecutionProducer {
   }
 
   /**
-   * Pause all jobs for a specific campaign
+   * Pause a specific campaign (DB status only — worker skips paused campaigns)
    */
   async pauseCampaign(campaignId: string): Promise<void> {
-    // Pause the queue
-    await this.campaignQueue.pause();
-    
-    // Update campaign status
     await this.prisma.campaign.update({
       where: { id: campaignId },
       data: {
@@ -274,13 +270,9 @@ export class CampaignExecutionProducer {
   }
 
   /**
-   * Resume campaign processing
+   * Resume a specific campaign (DB status only — worker resumes processing)
    */
   async resumeCampaign(campaignId: string): Promise<void> {
-    // Resume the queue
-    await this.campaignQueue.resume();
-    
-    // Update campaign status
     await this.prisma.campaign.update({
       where: { id: campaignId },
       data: {

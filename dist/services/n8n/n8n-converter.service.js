@@ -43,13 +43,20 @@ let N8nConverterService = class N8nConverterService {
      */
     buildNodeNameMap(nodes) {
         const nameCount = {};
+        const usedNames = new Set();
         const nodeNameMap = new Map();
         nodes.forEach((node) => {
-            let baseName = node.data.label || this.getDefaultNodeName(node.type);
+            const baseName = node.data.label || this.getDefaultNodeName(node.type);
             nameCount[baseName] = (nameCount[baseName] || 0) + 1;
-            const uniqueName = nameCount[baseName] > 1
+            let uniqueName = nameCount[baseName] > 1
                 ? `${baseName} ${nameCount[baseName]}`
                 : baseName;
+            // Ensure the generated name doesn't collide with another node's name
+            while (usedNames.has(uniqueName)) {
+                nameCount[baseName] += 1;
+                uniqueName = `${baseName} ${nameCount[baseName]}`;
+            }
+            usedNames.add(uniqueName);
             nodeNameMap.set(node.id, uniqueName);
         });
         return nodeNameMap;
@@ -212,9 +219,11 @@ return items;`;
      */
     convertConnections(nodes, edges, nodeNameMap) {
         const connections = {};
+        // Filter out self-referential edges
+        const validEdges = edges.filter((edge) => edge.source !== edge.target);
         // Group edges by source node
         const edgesBySource = new Map();
-        edges.forEach((edge) => {
+        validEdges.forEach((edge) => {
             const existing = edgesBySource.get(edge.source) || [];
             existing.push(edge);
             edgesBySource.set(edge.source, existing);
@@ -235,6 +244,9 @@ return items;`;
                     const targetName = nodeNameMap.get(edge.target);
                     if (!targetName)
                         return;
+                    // Skip if source and target resolve to the same n8n node name
+                    if (targetName === sourceName)
+                        return;
                     const connection = { node: targetName, type: 'main', index: 0 };
                     // Check sourceHandle for true/false branch
                     if (edge.sourceHandle === 'false') {
@@ -253,6 +265,9 @@ return items;`;
                 edgeList.forEach((edge) => {
                     const targetName = nodeNameMap.get(edge.target);
                     if (!targetName)
+                        return;
+                    // Skip if source and target resolve to the same n8n node name
+                    if (targetName === sourceName)
                         return;
                     outputConnections.push({ node: targetName, type: 'main', index: 0 });
                 });
@@ -387,8 +402,14 @@ return items;`;
                 errors.push(`Node "${node.data.label || node.type}" is not connected`);
             }
         });
-        // Check for cycles (basic check)
-        // More sophisticated cycle detection could be added
+        // Check for self-referential edges
+        flowData.edges.forEach((edge) => {
+            var _a;
+            if (edge.source === edge.target) {
+                const node = flowData.nodes.find((n) => n.id === edge.source);
+                errors.push(`Node "${((_a = node === null || node === void 0 ? void 0 : node.data) === null || _a === void 0 ? void 0 : _a.label) || edge.source}" has a connection to itself`);
+            }
+        });
         return {
             valid: errors.length === 0,
             errors,

@@ -1,6 +1,6 @@
-import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { Processor, WorkerHost, OnWorkerEvent, InjectQueue } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bullmq';
+import { Job, Queue } from 'bullmq';
 import { PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
@@ -18,7 +18,10 @@ export class CampaignExecutionWorker extends WorkerHost {
   private readonly logger = new Logger(CampaignExecutionWorker.name);
   private prisma: PrismaClient;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    @InjectQueue(CAMPAIGN_QUEUE) private campaignQueue: Queue,
+  ) {
     super();
     this.prisma = new PrismaClient();
     this.logger.log('🚀 CampaignExecutionWorker initialized');
@@ -56,6 +59,18 @@ export class CampaignExecutionWorker extends WorkerHost {
 
     this.logger.debug(`Processing job for campaign ${campaignId}: ${recipientEmail}`);
 
+    // Check if campaign is paused — re-queue with delay instead of processing
+    const campaignState = await this.prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { status: true },
+    });
+
+    if (campaignState?.status === 'paused') {
+      this.logger.debug(`Campaign ${campaignId} is paused, re-queuing job for ${recipientEmail}`);
+      await this.campaignQueue.add(job.name, job.data, { delay: 30000 });
+      return { skipped: true, reason: 'campaign paused' };
+    }
+
     try {
       // Create or update execution record
       const execution = await this.prisma.campaignExecution.upsert({
@@ -69,10 +84,12 @@ export class CampaignExecutionWorker extends WorkerHost {
           name: recipientName,
           status: 'processing',
           attempts: job.attemptsMade + 1,
+          recipientData: recipientData || {},
         },
         update: {
           status: 'processing',
           attempts: job.attemptsMade + 1,
+          recipientData: recipientData || undefined,
         },
       });
 
@@ -134,6 +151,7 @@ export class CampaignExecutionWorker extends WorkerHost {
         data: {
           processedCount: { increment: 1 },
           successCount: { increment: 1 },
+          totalSent: { increment: 1 },
         },
       });
 
@@ -195,6 +213,7 @@ export class CampaignExecutionWorker extends WorkerHost {
       data: {
         processedCount: { increment: 1 },
         failedCount: { increment: 1 },
+        totalFailed: { increment: 1 },
       },
     });
 
@@ -203,28 +222,24 @@ export class CampaignExecutionWorker extends WorkerHost {
   }
 
   /**
-   * Check if all jobs for a campaign are processed
+   * Check if all jobs for a campaign are processed (atomic to prevent race conditions).
+   * Uses raw SQL so the status check + field comparison + update happen in a single atomic statement.
+   * Only the first worker to reach this point will match the WHERE clause and mark it complete.
    */
   private async checkCampaignCompletion(campaignId: string): Promise<void> {
-    const campaign = await this.prisma.campaign.findUnique({
-      where: { id: campaignId },
-    });
+    const updated: number = await this.prisma.$executeRaw`
+      UPDATE campaigns
+      SET status = 'completed', execution_status = 'completed', completed_at = NOW(), updated_at = NOW()
+      WHERE id = ${campaignId}
+        AND status = 'running'
+        AND total_recipients > 0
+        AND processed_count >= total_recipients
+    `;
 
-    if (!campaign) return;
-
-    // Check if all recipients have been processed
-    if (campaign.processedCount >= campaign.totalRecipients && campaign.totalRecipients > 0) {
-      await this.prisma.campaign.update({
-        where: { id: campaignId },
-        data: {
-          status: 'completed',
-          executionStatus: 'completed',
-          completedAt: new Date(),
-        },
-      });
-
+    if (updated > 0) {
+      const campaign = await this.prisma.campaign.findUnique({ where: { id: campaignId } });
       this.logger.log(
-        `Campaign ${campaignId} completed! Success: ${campaign.successCount}, Failed: ${campaign.failedCount}`,
+        `Campaign ${campaignId} completed! Success: ${campaign?.successCount}, Failed: ${campaign?.failedCount}`,
       );
     }
   }

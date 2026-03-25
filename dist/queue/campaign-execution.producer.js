@@ -136,14 +136,14 @@ let CampaignExecutionProducer = CampaignExecutionProducer_1 = class CampaignExec
                 bodyStream
                     .pipe(csvParser())
                     .on('data', async (row) => {
-                    rowCount++;
                     // Extract email and name from row (handle different column names)
                     const email = row.email || row.Email || row.EMAIL || row.e_mail;
                     const name = row.name || row.Name || row.NAME || row.full_name || row.fullName || null;
                     if (!email) {
-                        this.logger.warn(`Row ${rowCount} has no email, skipping`);
+                        this.logger.warn(`Skipping row with no email`);
                         return;
                     }
+                    rowCount++;
                     // Create job data
                     const jobData = {
                         campaignId,
@@ -210,12 +210,9 @@ let CampaignExecutionProducer = CampaignExecutionProducer_1 = class CampaignExec
         return { waiting, active, completed, failed };
     }
     /**
-     * Pause all jobs for a specific campaign
+     * Pause a specific campaign (DB status only — worker skips paused campaigns)
      */
     async pauseCampaign(campaignId) {
-        // Pause the queue
-        await this.campaignQueue.pause();
-        // Update campaign status
         await this.prisma.campaign.update({
             where: { id: campaignId },
             data: {
@@ -226,12 +223,9 @@ let CampaignExecutionProducer = CampaignExecutionProducer_1 = class CampaignExec
         this.logger.log(`Campaign ${campaignId} paused`);
     }
     /**
-     * Resume campaign processing
+     * Resume a specific campaign (DB status only — worker resumes processing)
      */
     async resumeCampaign(campaignId) {
-        // Resume the queue
-        await this.campaignQueue.resume();
-        // Update campaign status
         await this.prisma.campaign.update({
             where: { id: campaignId },
             data: {

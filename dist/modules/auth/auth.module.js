@@ -26,12 +26,18 @@ exports.AuthModule = AuthModule = __decorate([
             jwt_1.JwtModule.registerAsync({
                 imports: [config_1.ConfigModule],
                 inject: [config_1.ConfigService],
-                useFactory: (configService) => ({
-                    secret: configService.get('JWT_SECRET') || 'default-secret-key',
-                    signOptions: {
-                        expiresIn: '1h',
-                    },
-                }),
+                useFactory: (configService) => {
+                    const secret = configService.get('JWT_SECRET');
+                    if (!secret) {
+                        throw new Error('JWT_SECRET environment variable is not set');
+                    }
+                    return {
+                        secret,
+                        signOptions: {
+                            expiresIn: '1h',
+                        },
+                    };
+                },
             }),
         ],
         controllers: [auth_controller_1.AuthController],
